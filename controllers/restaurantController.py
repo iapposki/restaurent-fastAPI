@@ -1,9 +1,10 @@
-from datetime import datetime, timezone
+from random import random
+from datetime import datetime, timezone, timedelta
 import os
 import pandas as pd
 import time
 from prisma import Prisma
-import asyncio
+from dateutil import tz, parser
 
 ####################### Getting report id and the report itself
 def get_report(report_id : str = None) :
@@ -131,11 +132,11 @@ async def store_hours_update():
         store_hours_data = pd.read_csv(raw_data_path)  
     except Exception as e :
         print('Error while getting file for updating store status.', e)
-    print('ok1')
+    # print('ok1')
     store_hours_data['start_time_local'] = store_hours_data['start_time_local'].map(datetime_string_processing_StoreHours)
     store_hours_data['end_time_local'] = store_hours_data['end_time_local'].map(datetime_string_processing_StoreHours)
     store_hours_data = store_hours_data.to_dict('records')
-    print('ok2')
+    # print('ok2')
     print('Started updating the store hours.')
     start = time.time()
     prisma = Prisma()
@@ -156,6 +157,104 @@ async def store_hours_update():
     print(message, "Time taken for store hours update : ", (end-start)/60, ' minutes')
 
 
-async def generate_report():
-    
+# ############################# Report making
+def norm_to_schema(dayofweek):
+    res = dayofweek - 1
+    return res
+def local_to_utc(date, local_tzinfo):
+    return date.replace(tzinfo=local_tzinfo).astimezone(tz=timezone.utc)
+def utc_to_local(date, local_tzinfo):
+    return date.astimezone(tz=local_tzinfo)
+def upt_dwt_last_hour(storehours_data_arr,poll_data_arr, local_tzinfo):
+    latest_poll_time = poll_data_arr[-1].timestamp_utc
+    latest_poll_time = utc_to_local(latest_poll_time, local_tzinfo)
+    if len(storehours_data_arr) == 0:
+        end_time = datetime.now().astimezone(tz=local_tzinfo)
+        # current_time_local = datetime.now().astimezone(tz=local_tzinfo)
+        # temporary current time local !!!!!!!!!!!!!!!
+        current_time_local = latest_poll_time + timedelta(hours=4*random())
+    else:
+        # current_time_local = datetime.now().astimezone(tz=local_tzinfo)
+        # temporary current time local !!!!!!!!!!!!!!!
+        current_time_local = latest_poll_time + timedelta(hours=4*random())
+        day = norm_to_schema(latest_poll_time.isoweekday())
+        end_time = storehours_data_arr[day].end_time_local
+        end_time = end_time.replace(day=latest_poll_time.day, month=latest_poll_time.month, year=latest_poll_time.year, tzinfo=local_tzinfo)
+    if current_time_local > end_time:
+        return 'Store is past closing.'
+    else:
+        delta_one = current_time_local - latest_poll_time
+        # set leeway here for last hour uptime/downtime
+        temp = timedelta(hours=2)
+        if delta_one - temp < timedelta(hours=1) and poll_data_arr[-1].status != 'inactive':
+            downtime_last_hour = delta_one - temp
+            uptime_last_hour = timedelta(hours=1) - downtime_last_hour
+        else:
+            uptime_last_hour = timedelta(hours=0)
+            downtime_last_hour = timedelta(hours=1)
+
+        # return [end_time, latest_poll_time, end_time - latest_poll_time]
+        return [uptime_last_hour, downtime_last_hour, delta_one]
+def upt_dwt_last_day(storehours_data_arr, poll_data_arr, local_tzinfo):
+
     return
+def uptime_downtime(storehours_data_arr, poll_data_arr, local_tzinfo):
+    # return format: [uptime last hour, uptime last day, uptime last week, downtime last hour, downtime last day, downtime last week]
+    upt_dwt_last_hour_final = upt_dwt_last_hour(storehours_data_arr, poll_data_arr, local_tzinfo)
+
+    return upt_dwt_last_hour_final
+
+async def generate_report():
+    prisma = Prisma()
+    await prisma.connect()
+    report = {'store_id' : [], 'uptime_last_hour' : [], 'uptime_last_day' : [], 'update_last_week' : [], 'downtime_last_hour' : [], 'downtime_last_day' : [], 'downtime_last_week' : []}
+    store_timestamp_data = await prisma.storetimezone.find_many()
+    df = pd.DataFrame(store_timestamp_data, columns=['store_id', 'timezone_str'])
+    try:
+        df['store_id'] = df['store_id'].map(lambda x : x[1])
+        df['timezone_str'] = df['timezone_str'].map(lambda x : x[1])
+    except Exception as e:
+        print(e)
+    # print(df)
+
+    # for ind in df.index :
+    date_now = datetime(2023,1,26)
+    delta = timedelta(days=-7)
+    date_week_before = date_now + delta
+    for ind in range(50):
+        # print(df['store_id'][ind])
+        store_id = df['store_id'][ind]
+        try:
+            poll_data = await prisma.storestatus.find_many(
+                where={'store_id' : str(store_id), 'timestamp_utc' : {
+                    'gt' : date_week_before
+                } },
+                order={
+                    'timestamp_utc' : 'asc' 
+                }
+            )
+        except Exception as e:
+            print(e)
+        try : 
+            store_schedule_data = await prisma.storehours.find_many(
+                where={
+                    'store_id' : str(store_id),
+                },
+                order={
+                    'day_of_week' : 'asc'
+                }
+            )
+        except Exception as e:
+            print(e)
+        # print(poll_data)
+        # print(ind)
+        # print(store_schedule_data)
+        try:
+            local_tzinfo = tz.gettz(str(df['timezone_str'][ind]))
+            # print(local_tzinfo, df['timezone_str'][ind])
+            print(uptime_downtime(store_schedule_data, poll_data, local_tzinfo))
+        except Exception as e:
+            print(e)
+
+    await prisma.disconnect()
+    return store_timestamp_data

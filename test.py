@@ -1,10 +1,11 @@
+from random import random
 import pandas as pd
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from prisma import Prisma
 import asyncio
 import pytz
-import time
+from dateutil import parser, tz
 
 # def datetime_string_processing(string) :
 #     format = f'%Y-%m-%d %H:%M:%S.%f'
@@ -86,3 +87,26 @@ import time
 # date_object = date_object.replace(tzinfo=timezone.utc)
 # print(date_object, date_object.isoformat())
 # # print(timezone.tzname('America/Denver'))
+
+leeway = timedelta(hours=1.5)
+a = datetime.now()
+b = a + timedelta(hours=1)
+print(a,b,b-a)
+temp = tz.gettz('America/Denver')
+print(temp)
+string = "2012-01-19 17:21:00.00 UTC"
+format = f'%Y-%m-%d %H:%M:%S.%f %Z'
+# print(parser.parse(date, tzinfos=temp), 'okk')
+print(datetime.strptime(string, format).replace(tzinfo=temp).tzinfo)
+print(a)
+b = a.astimezone(tz=temp)
+c = a.astimezone(tz=timezone.utc)
+d = datetime(2023,2,1,20,00,00)
+print(a, b, c)
+delta = timedelta(days=2)
+a = a+delta
+d = d.replace(day=a.day, month=a.month, year=a.year)
+print(a,d,d-a)
+print(timedelta(minutes=10.5).seconds, delta.seconds)
+print(timedelta(hours=2)-timedelta(hours=1))
+print(random())
