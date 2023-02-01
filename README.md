@@ -1,4 +1,4 @@
-# restaurent-status-fastAPI
+# restaurent-fastAPI
 
 To run app : 
 ```
