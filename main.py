@@ -38,7 +38,7 @@ def get_report(id : str = None):
             return res
     return res
 
-@app.on_event("startup")
+# @app.on_event("startup")
 @repeat_every(seconds=60*60)  # 1 hour
 async def initiate_report_generation():
     await restaurantController.generate_report()
