@@ -33,7 +33,7 @@ def get_report(id : str = None):
     res = restaurantController.get_report(id)
     if id :
         if res['status'] == 'Completed':
-            return FileResponse('./data/reports/' + id + '.csv', filename=id+'.csv')
+            return FileResponse('./controllers/data/reports/' + id + '.csv', filename=id+'.csv')
         else: 
             return res
     return res
